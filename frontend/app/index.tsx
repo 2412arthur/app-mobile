@@ -303,27 +303,46 @@ export default function Index() {
   };
 
   const deleteCard = async (cardId: string) => {
-    Alert.alert(
-      'Confirmer',
-      'Voulez-vous vraiment supprimer cette carte ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await fetch(`${API_URL}/api/cards/${cardId}`, {
-                method: 'DELETE',
-              });
-              loadCards();
-            } catch (error) {
-              Alert.alert('Erreur', 'Impossible de supprimer la carte');
-            }
+    // Use window.confirm on web, Alert on mobile
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Voulez-vous vraiment supprimer cette carte ?');
+      if (confirmed) {
+        try {
+          const response = await fetch(`${API_URL}/api/cards/${cardId}`, {
+            method: 'DELETE',
+          });
+          if (response.ok) {
+            loadCards();
+          } else {
+            alert('Erreur: Impossible de supprimer la carte');
+          }
+        } catch (error) {
+          alert('Erreur: Impossible de supprimer la carte');
+        }
+      }
+    } else {
+      Alert.alert(
+        'Confirmer',
+        'Voulez-vous vraiment supprimer cette carte ?',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await fetch(`${API_URL}/api/cards/${cardId}`, {
+                  method: 'DELETE',
+                });
+                loadCards();
+              } catch (error) {
+                Alert.alert('Erreur', 'Impossible de supprimer la carte');
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const markAsFound = async (cardId: string) => {
