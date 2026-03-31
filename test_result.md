@@ -285,6 +285,51 @@ backend:
         agent: "testing"
         comment: "Unfound functionality working correctly. Resets card to unfound state, clears found_by, found_at, validated status, and removes all photo_submissions. Complete state reset as expected."
 
+  - task: "Push token registration endpoint (POST /api/users/{id}/push-token)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint to register Expo push tokens for users. Stores token in user document for push notifications."
+      - working: true
+        agent: "testing"
+        comment: "Push token registration working perfectly. POST /api/users/{id}/push-token accepts push_token in request body, validates user exists, stores token in user document. Returns proper success message. Tested with valid ExponentPushToken format and invalid user IDs."
+
+  - task: "Push token removal endpoint (DELETE /api/users/{id}/push-token)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint to remove push tokens when users logout. Unsets push_token field from user document."
+      - working: true
+        agent: "testing"
+        comment: "Push token removal working correctly. DELETE /api/users/{id}/push-token removes push_token field from user document using $unset operation. Returns proper success message. Verified token is completely removed from user object."
+
+  - task: "Push notification integration with validate/reject flows"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Enhanced add_notification() function to send real push notifications via Expo Push API when users have registered push tokens."
+      - working: true
+        agent: "testing"
+        comment: "Push notification integration working perfectly. When admin validates/rejects photos, system creates in-app notification AND sends real push notification to Expo Push API (https://exp.host/--/api/v2/push/send). Backend logs show successful HTTP 200 responses from Expo API. Tested both validation (success notification) and rejection (error notification) flows. Push notifications only sent when user has valid ExponentPushToken registered."
+
 frontend:
   - task: "Login screen with admin/team differentiation"
     implemented: true
@@ -378,3 +423,7 @@ agent_communication:
     message: "Massive feature injection rewrite was done by previous agent. Backend and frontend are running. Backend health check passed. Admin login and card list display verified via screenshot. Need thorough testing of all new endpoints especially: photo submission flow, validate/reject photo, notifications, stats, user profile with rewards. Admin password is '1234'. Test team user with name='TestUser' contact='@testinsta'."
   - agent: "testing"
     message: "Comprehensive backend API testing completed. 30/31 tests passed (96.8% success rate). All critical photo submission flows working correctly: non-VIP requires photos (validated), VIP can skip photos, admin validation/rejection with notifications working. All CRUD operations, user management, stats dashboard, and notifications functioning properly. One minor timeout issue in test suite but endpoint verified working via separate test. Backend is production-ready."
+  - agent: "main"
+    message: "Push Notifications feature implemented. New backend endpoints: POST /api/users/{id}/push-token (register Expo push token), DELETE /api/users/{id}/push-token (remove on logout). Backend add_notification() now also sends real push notifications via Expo Push API (https://exp.host/--/api/v2/push/send). Frontend: integrated expo-notifications and expo-device, push token registration on login, notification listeners for data refresh, push token cleanup on logout, Android notification channel setup. All tested manually with curl - endpoints working. Frontend compiles and renders correctly. Please test the new push token endpoints."
+  - agent: "testing"
+    message: "Push Notification endpoints testing completed successfully! All 13 tests passed (100% success rate). NEW ENDPOINTS WORKING: POST /api/users/{id}/push-token (registers ExponentPushToken, validates user exists, returns success message), DELETE /api/users/{id}/push-token (removes token from user object), GET /api/users/{id} (shows push_token field when registered). INTEGRATION WORKING: Admin validate/reject photo flows now send real push notifications to Expo Push API (confirmed via backend logs showing HTTP 200 responses to https://exp.host/--/api/v2/push/send). Both validation success and rejection error notifications working correctly. All existing endpoints still functional. Push notification feature is production-ready."

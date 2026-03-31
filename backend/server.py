@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime, timedelta
 import secrets
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -193,11 +194,58 @@ async def clear_notifications(user_id: str):
     await db.users.update_one({'_id': oid}, {'$set': {'notifications': []}})
     return {"message": "Notifications cleared"}
 
+# Push Token registration
+class PushTokenRequest(BaseModel):
+    push_token: str
+
+@api_router.post("/users/{user_id}/push-token")
+async def register_push_token(user_id: str, request: PushTokenRequest):
+    oid = get_object_id(user_id)
+    user = await db.users.find_one({'_id': oid})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({'_id': oid}, {'$set': {'push_token': request.push_token}})
+    return {"message": "Push token registered"}
+
+@api_router.delete("/users/{user_id}/push-token")
+async def remove_push_token(user_id: str):
+    oid = get_object_id(user_id)
+    await db.users.update_one({'_id': oid}, {'$unset': {'push_token': 1}})
+    return {"message": "Push token removed"}
+
+async def send_push_notification(push_token: str, title: str, body: str, data: dict = None):
+    """Send push notification via Expo Push API"""
+    if not push_token or not push_token.startswith('ExponentPushToken'):
+        return
+    message = {
+        "to": push_token,
+        "sound": "default",
+        "title": title,
+        "body": body,
+    }
+    if data:
+        message["data"] = data
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=message,
+                headers={"Content-Type": "application/json"}
+            )
+    except Exception as e:
+        logging.error(f"Push notification error: {e}")
+
 async def add_notification(user_name: str, message: str, type: str = "info"):
+    # Save in-app notification
     await db.users.update_one(
         {'name': user_name},
         {'$push': {'notifications': {'message': message, 'type': type, 'created_at': datetime.utcnow().isoformat(), 'read': False}}}
     )
+    # Send push notification
+    user = await db.users.find_one({'name': user_name})
+    if user and user.get('push_token'):
+        title = "PokéCollection" if type == "info" else ("Validé !" if type == "success" else "Refusé")
+        await send_push_notification(user['push_token'], title, message)
 
 # Card endpoints
 @api_router.get("/cards")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Image,
   Alert, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, RefreshControl, Dimensions, Linking,
@@ -7,6 +7,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+
+// Configure notification handler
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -97,9 +108,68 @@ export default function Index() {
   const [editPaypal, setEditPaypal] = useState('');
   const [rejectReason, setRejectReason] = useState('');
 
+  const notificationListener = useRef<Notifications.EventSubscription>();
+  const responseListener = useRef<Notifications.EventSubscription>();
+
   useEffect(() => { checkSavedAuth(); }, []);
   useEffect(() => { if (isLoggedIn) loadData(); }, [isLoggedIn]);
   useEffect(() => { if (isLoggedIn) loadCards(); }, [searchQuery, selectedCondition, showFoundOnly, selectedTags, showPendingOnly, sortBy]);
+
+  // Push notification listeners
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      // Refresh data when notification received
+      if (isLoggedIn) { loadCards(); loadNotifications(); }
+    });
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      // User tapped on notification - refresh data
+      if (isLoggedIn) { loadCards(); loadNotifications(); }
+    });
+    return () => {
+      if (notificationListener.current) Notifications.removeNotificationSubscription(notificationListener.current);
+      if (responseListener.current) Notifications.removeNotificationSubscription(responseListener.current);
+    };
+  }, [isLoggedIn]);
+
+  const registerForPushNotifications = async (uid: string) => {
+    if (Platform.OS === 'web') return;
+    try {
+      if (!Device.isDevice) {
+        console.log('Push notifications require a physical device');
+        return;
+      }
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        console.log('Push notification permission denied');
+        return;
+      }
+      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const pushToken = tokenData.data;
+      console.log('Push token:', pushToken);
+      // Register token with backend
+      await fetch(`${API_URL}/api/users/${uid}/push-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ push_token: pushToken })
+      });
+      // Set notification channel for Android
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'PokéCollection',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFCB05',
+        });
+      }
+    } catch (e) {
+      console.log('Push notification registration error:', e);
+    }
+  };
 
   const checkSavedAuth = async () => {
     try {
@@ -112,6 +182,8 @@ export default function Index() {
         setUserName(savedName || 'Admin'); setUserContact(savedContact || '');
         setUserId(savedUserId || ''); setUserPaypal(savedPaypal || '');
         setIsLoggedIn(true);
+        // Re-register push token on app restart
+        if (savedUserId) registerForPushNotifications(savedUserId);
       }
     } catch (error) { console.error('Error:', error); }
     finally { setAuthLoading(false); }
@@ -146,11 +218,17 @@ export default function Index() {
       const data = await res.json();
       await AsyncStorage.multiSet([['userName', userName], ['userContact', userContact], ['isAdmin', 'false'], ['isVip', data.is_vip.toString()], ['userId', data.user_id]]);
       setIsVip(data.is_vip); setUserId(data.user_id); setIsLoggedIn(true);
+      // Register push notifications for team users
+      registerForPushNotifications(data.user_id);
     } catch (e) { showAlert('Erreur', 'Erreur de connexion'); }
     finally { setAuthLoading(false); }
   };
 
   const handleLogout = async () => {
+    // Remove push token from backend
+    if (userId) {
+      try { await fetch(`${API_URL}/api/users/${userId}/push-token`, { method: 'DELETE' }); } catch (e) { console.log('Push token removal error:', e); }
+    }
     await AsyncStorage.multiRemove(['userName', 'userContact', 'isAdmin', 'isVip', 'userId', 'userPaypal']);
     setIsLoggedIn(false); setIsAdmin(false); setIsVip(false); setUserName(''); setUserContact(''); setPassword(''); setUserId(''); setUserPaypal(''); setLoginMode('team');
   };
