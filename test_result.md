@@ -102,10 +102,10 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Application de gestion de cartes Pokémon avec système admin/équipe. Admin peut ajouter/modifier/supprimer des cartes avec tags, prix, conditions. Équipe peut seulement marquer comme trouvé."
+user_problem_statement: "Application de gestion de cartes Pokémon avec système admin/équipe/VIP. Admin peut ajouter/modifier/supprimer des cartes avec tags, prix, conditions, récompenses, deadlines. Équipe doit obligatoirement soumettre des photos HD recto/verso pour marquer une carte comme trouvée. Admin peut valider ou refuser les soumissions avec un motif. Dashboard stats admin. Notifications utilisateur. Espace client avec suivi des récompenses et PayPal."
 
 backend:
-  - task: "Auth verification endpoint"
+  - task: "Admin auth endpoint (POST /api/auth/admin)"
     implemented: true
     working: true
     file: "/app/backend/server.py"
@@ -115,7 +115,25 @@ backend:
     status_history:
       - working: true
         agent: "main"
-        comment: "POST /api/auth/verify - verifies admin password, returns is_admin boolean"
+        comment: "POST /api/auth/admin - verifies admin password '1234', returns is_admin boolean. Tested with curl - working."
+      - working: true
+        agent: "testing"
+        comment: "Comprehensive testing completed. Admin auth working correctly - accepts correct password '1234' and rejects wrong passwords. Returns proper is_admin boolean."
+
+  - task: "Team auth/login endpoint (POST /api/auth/login)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "POST /api/auth/login - name+contact login, creates user if not exists, returns user_id and role. Tested with curl - working."
+      - working: true
+        agent: "testing"
+        comment: "Team authentication working perfectly. Creates users on first login, returns proper user_id and role. Tested with multiple users including VIP role assignment."
 
   - task: "Cards CRUD endpoints"
     implemented: true
@@ -127,9 +145,12 @@ backend:
     status_history:
       - working: true
         agent: "main"
-        comment: "GET/POST/PUT/DELETE /api/cards - all endpoints tested with curl"
+        comment: "GET/POST/PUT/DELETE /api/cards - with filters (tag, condition, found, search, pending_validation, sort_by). Aggregation pipeline excludes base64 images from list. Tested with curl."
+      - working: true
+        agent: "testing"
+        comment: "All CRUD operations working correctly. GET with filters (condition, tag, pending_validation), POST creates cards with proper defaults, PUT updates fields, DELETE removes cards. Aggregation pipeline working for image optimization."
 
-  - task: "Mark card as found/unfound"
+  - task: "Mark card as found with mandatory photos (POST /api/cards/{id}/found)"
     implemented: true
     working: true
     file: "/app/backend/server.py"
@@ -137,9 +158,102 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Non-VIP must submit front_image and back_image. VIP can mark without photos. Creates photo_submission entry. Needs thorough testing."
+      - working: true
+        agent: "testing"
+        comment: "CRITICAL FEATURE WORKING CORRECTLY. Non-VIP users MUST provide front_image and back_image (returns 400 if missing). VIP users can mark found without photos and auto-validate. Photo submissions properly stored with unique IDs."
+
+  - task: "Photo submission endpoint (POST /api/cards/{id}/submit-photos)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Allows resubmission of photos for a card. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "Photo resubmission working correctly. Allows users to submit additional photos for a card. Properly adds new submissions to photo_submissions array with unique IDs and timestamps."
+
+  - task: "Validate photo submission (POST /api/cards/{id}/validate-photo)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Admin validates a specific submission by ID. Sets card as validated. Sends notification to user. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "Photo validation working perfectly. Admin can validate specific submission by ID, sets card.validated=true, stores validated_submission, and sends success notification to user. Tested end-to-end."
+
+  - task: "Reject photo submission (POST /api/cards/{id}/reject-photo)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Admin rejects a submission with a reason. If all rejected, card reverts to unfound. Sends notification. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "Photo rejection working correctly. Admin can reject with reason, marks submission as rejected, sends notification to user. If all submissions rejected, card reverts to unfound state. Logic working as expected."
+
+  - task: "Stats dashboard endpoint (GET /api/stats)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
       - working: true
         agent: "main"
-        comment: "POST /api/cards/{id}/found and /unfound - tested successfully"
+        comment: "Returns total, found, validated, pending, urgent counts + top_hunters. Tested with curl - working."
+      - working: true
+        agent: "testing"
+        comment: "Stats dashboard working perfectly. Returns all required fields: total, found, validated, pending_validation, pending, found_today, urgent, top_hunters. Aggregation pipeline for top hunters working correctly."
+
+  - task: "User management endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "GET/PUT/DELETE /api/users, PUT /api/users/{id}/role. Includes user profile with validated_cards, pending_submissions, rejected_submissions, total_rewards."
+      - working: true
+        agent: "testing"
+        comment: "User management fully functional. GET /users lists all users, GET /users/{id} returns detailed profile with validated_cards, pending_submissions, rejected_submissions, total_rewards. PUT updates profile (PayPal tested), role changes working, DELETE removes users."
+
+  - task: "Notifications endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "GET/DELETE /api/users/{id}/notifications. Notifications are pushed when admin validates/rejects. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "Notifications system working correctly. GET returns user notifications array, DELETE clears notifications. Notifications automatically created when admin validates/rejects submissions with proper success/error messages."
 
   - task: "Tags CRUD endpoints"
     implemented: true
@@ -152,6 +266,24 @@ backend:
       - working: true
         agent: "main"
         comment: "GET/POST/DELETE /api/tags - working correctly"
+      - working: true
+        agent: "testing"
+        comment: "Tags CRUD working correctly. GET retrieves all tags, POST creates new tags with name and color, DELETE removes tags. Duplicate prevention working."
+
+  - task: "Mark card as unfound (POST /api/cards/{id}/unfound)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Resets card to unfound, clears all submissions. Needs testing."
+      - working: true
+        agent: "testing"
+        comment: "Unfound functionality working correctly. Resets card to unfound state, clears found_by, found_at, validated status, and removes all photo_submissions. Complete state reset as expected."
 
 frontend:
   - task: "Login screen with admin/team differentiation"
@@ -164,9 +296,9 @@ frontend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Login screen displays correctly, admin password verification works"
+        comment: "Login screen verified via screenshot. Admin login with password only, team login with name+contact."
 
-  - task: "Cards list display"
+  - task: "Cards list with image lazy loading and filters"
     implemented: true
     working: true
     file: "/app/frontend/app/index.tsx"
@@ -176,9 +308,9 @@ frontend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Cards displayed with name, condition badge, price, tags, notes"
+        comment: "Cards displayed with CardImage memo component, condition badges, price/reward, tags, urgent badges. Verified via screenshot."
 
-  - task: "Admin card management (add/edit/delete)"
+  - task: "Admin dashboard (stats, user management, card CRUD)"
     implemented: true
     working: true
     file: "/app/frontend/app/index.tsx"
@@ -188,46 +320,61 @@ frontend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Admin can see edit/delete buttons, add button visible"
+        comment: "Admin dashboard verified via screenshot - header buttons for stats, users, filters, logout visible."
 
-  - task: "Team member - mark as found"
+  - task: "Photo submission flow (front/back mandatory)"
     implemented: true
-    working: true
+    working: "NA"
     file: "/app/frontend/app/index.tsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: true
+      - working: "NA"
         agent: "main"
-        comment: "Team members only see checkmark button to mark cards as found"
+        comment: "Photo modal with front/back image pickers. Button disabled until both photos selected. Not yet tested interactively."
 
-  - task: "Search and filter functionality"
+  - task: "Admin validate/reject photo submissions"
     implemented: true
-    working: true
+    working: "NA"
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Card detail modal shows submissions with validate/reject buttons. Reject modal with reason text. Not yet tested interactively."
+
+  - task: "Client profile/space with rewards tracking"
+    implemented: true
+    working: "NA"
     file: "/app/frontend/app/index.tsx"
     stuck_count: 0
     priority: "medium"
     needs_retesting: false
     status_history:
-      - working: true
+      - working: "NA"
         agent: "main"
-        comment: "Search bar and filter panel with tags, conditions, and found status"
+        comment: "Profile modal shows balance, validated cards, pending submissions, PayPal info. Not yet tested interactively."
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "2.0"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Backend endpoints verification"
-    - "Frontend login flow"
+    - "Photo submission flow (front/back mandatory)"
+    - "Admin validate/reject photo submissions"
+    - "Client profile/space with rewards tracking"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "MVP implemented with all core features: auth, cards CRUD, tags, mark as found. Backend tested with curl, frontend visually verified with screenshots."
+    message: "Massive feature injection rewrite was done by previous agent. Backend and frontend are running. Backend health check passed. Admin login and card list display verified via screenshot. Need thorough testing of all new endpoints especially: photo submission flow, validate/reject photo, notifications, stats, user profile with rewards. Admin password is '1234'. Test team user with name='TestUser' contact='@testinsta'."
+  - agent: "testing"
+    message: "Comprehensive backend API testing completed. 30/31 tests passed (96.8% success rate). All critical photo submission flows working correctly: non-VIP requires photos (validated), VIP can skip photos, admin validation/rejection with notifications working. All CRUD operations, user management, stats dashboard, and notifications functioning properly. One minor timeout issue in test suite but endpoint verified working via separate test. Backend is production-ready."
