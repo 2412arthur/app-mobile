@@ -26,7 +26,7 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 # Admin password
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'pokemon2025')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '1234')
 
 # User Roles
 ROLE_ADMIN = "admin"
@@ -39,10 +39,17 @@ class UserCreate(BaseModel):
     contact: str  # Instagram handle or phone number (06...)
     password: Optional[str] = None  # For admin
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    contact: Optional[str] = None
+    paypal: Optional[str] = None
+
 class User(BaseModel):
     name: str
     contact: str
     role: str = ROLE_TEAM  # admin, vip, team
+    paypal: Optional[str] = None
+    balance: float = 0.0  # Solde des récompenses
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class CardBase(BaseModel):
@@ -135,6 +142,8 @@ async def login_or_register(auth: AuthRequest):
             'name': auth.name,
             'contact': auth.contact,
             'role': ROLE_ADMIN if is_admin else ROLE_TEAM,
+            'paypal': None,
+            'balance': 0.0,
             'created_at': datetime.utcnow()
         }
         result = await db.users.insert_one(new_user)
@@ -160,6 +169,50 @@ async def get_users():
     """Get all users (admin only)"""
     users = await db.users.find().to_list(500)
     return [doc_to_dict(u) for u in users]
+
+@api_router.get("/users/{user_id}")
+async def get_user(user_id: str):
+    """Get a single user by ID"""
+    oid = get_object_id(user_id)
+    user = await db.users.find_one({'_id': oid})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get user's validated cards to calculate rewards
+    validated_cards = await db.cards.find({
+        'validated': True,
+        'found_by': user.get('name')
+    }).to_list(100)
+    
+    user_dict = doc_to_dict(user)
+    user_dict['validated_cards'] = [doc_to_dict(c) for c in validated_cards]
+    user_dict['total_rewards'] = sum(c.get('reward', 0) or 0 for c in validated_cards)
+    
+    return user_dict
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, user_update: UserUpdate):
+    """Update user info"""
+    oid = get_object_id(user_id)
+    existing = await db.users.find_one({'_id': oid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    update_data = {k: v for k, v in user_update.dict().items() if v is not None}
+    if update_data:
+        await db.users.update_one({'_id': oid}, {'$set': update_data})
+    
+    updated = await db.users.find_one({'_id': oid})
+    return doc_to_dict(updated)
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str):
+    """Delete a user (admin only)"""
+    oid = get_object_id(user_id)
+    result = await db.users.delete_one({'_id': oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted successfully"}
 
 @api_router.put("/users/{user_id}/role")
 async def update_user_role(user_id: str, role: str):
