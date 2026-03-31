@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -31,10 +31,67 @@ const TAG_COLORS = [
   '#EC4899', '#06B6D4', '#84CC16'
 ];
 
+// Lazy loading card image component
+const CardImage = memo(({ cardId, hasImage }: { cardId: string; hasImage: boolean }) => {
+  const [imageData, setImageData] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const loadImage = async () => {
+    if (loaded || loading || !hasImage) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/cards/${cardId}`);
+      const card = await response.json();
+      if (card.image) {
+        setImageData(card.image);
+      }
+    } catch (error) {
+      console.error('Error loading image:', error);
+    } finally {
+      setLoading(false);
+      setLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    if (hasImage && !loaded) {
+      loadImage();
+    }
+  }, [hasImage]);
+
+  if (!hasImage) {
+    return (
+      <View style={styles.cardImagePlaceholder}>
+        <Ionicons name="image-outline" size={40} color="#6B7280" />
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.cardImagePlaceholder}>
+        <ActivityIndicator size="small" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (imageData) {
+    return <Image source={{ uri: imageData }} style={styles.cardImage} />;
+  }
+
+  return (
+    <View style={styles.cardImagePlaceholder}>
+      <Ionicons name="image-outline" size={40} color="#6B7280" />
+    </View>
+  );
+});
+
 interface Card {
   id: string;
   name: string;
   image?: string;
+  has_image?: boolean;
   price_min?: number;
   price_max?: number;
   condition: string;
@@ -626,13 +683,7 @@ export default function Index() {
                 card.found && styles.cardFound
               ]}
             >
-              {card.image ? (
-                <Image source={{ uri: card.image }} style={styles.cardImage} />
-              ) : (
-                <View style={styles.cardImagePlaceholder}>
-                  <Ionicons name="image-outline" size={40} color="#6B7280" />
-                </View>
-              )}
+              <CardImage cardId={card.id} hasImage={card.has_image || !!card.image} />
               
               <View style={styles.cardContent}>
                 <Text style={styles.cardName}>{card.name}</Text>
@@ -1227,10 +1278,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.25)',
+      },
+    }),
   },
   fabSecondary: {
     backgroundColor: '#6B7280',

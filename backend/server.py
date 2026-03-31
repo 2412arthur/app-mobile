@@ -102,9 +102,12 @@ async def get_cards(
     tag: Optional[str] = None,
     condition: Optional[str] = None,
     found: Optional[bool] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    include_image: bool = False,
+    skip: int = 0,
+    limit: int = 50
 ):
-    """Get all cards with optional filters"""
+    """Get all cards with optional filters and pagination"""
     query = {}
     
     if tag:
@@ -116,7 +119,27 @@ async def get_cards(
     if search:
         query['name'] = {'$regex': search, '$options': 'i'}
     
-    cards = await db.cards.find(query).sort('created_at', -1).to_list(1000)
+    # Use aggregation for conditional projection to avoid loading images
+    if not include_image:
+        pipeline = [
+            {'$match': query},
+            {'$sort': {'created_at': -1}},
+            {'$skip': skip},
+            {'$limit': limit},
+            {'$addFields': {
+                'has_image': {'$cond': [{'$and': [{'$ne': ['$image', None]}, {'$ne': ['$image', '']}]}, True, False]}
+            }},
+            {'$project': {
+                'name': 1, 'price_min': 1, 'price_max': 1, 'condition': 1,
+                'tags': 1, 'notes': 1, 'deadline': 1, 'found': 1,
+                'found_by': 1, 'found_at': 1, 'created_at': 1, 'updated_at': 1,
+                'has_image': 1
+            }}
+        ]
+        cards = await db.cards.aggregate(pipeline).to_list(limit)
+    else:
+        cards = await db.cards.find(query).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    
     return [card_to_dict(card) for card in cards]
 
 @api_router.get("/cards/{card_id}")
