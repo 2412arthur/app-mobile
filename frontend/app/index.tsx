@@ -1216,6 +1216,8 @@ const styles = StyleSheet.create({
     right: 16,
     bottom: 24,
     gap: 12,
+    zIndex: 999,
+    elevation: 10,
   },
   fab: {
     width: 56,
