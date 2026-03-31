@@ -330,6 +330,18 @@ backend:
         agent: "testing"
         comment: "Push notification integration working perfectly. When admin validates/rejects photos, system creates in-app notification AND sends real push notification to Expo Push API (https://exp.host/--/api/v2/push/send). Backend logs show successful HTTP 200 responses from Expo API. Tested both validation (success notification) and rejection (error notification) flows. Push notifications only sent when user has valid ExponentPushToken registered."
 
+  - task: "Comprehensive regression test after backend refactoring"
+    implemented: true
+    working: true
+    file: "/app/backend/routes/"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "COMPREHENSIVE REGRESSION TEST COMPLETED - 100% SUCCESS RATE (26/26 tests passed). All endpoints verified working after major backend refactoring from monolithic server.py (620 lines) to modular structure (44 lines). CRITICAL: Image storage migration working correctly - images now stored as /api/uploads/ URLs instead of base64 in database. All 25 requested endpoints + additional endpoints tested: health, auth (admin/team), cards CRUD with pagination, photo submission/validation/rejection, user management, notifications, stats, tags, push tokens, upload. Zero breaking changes detected. Backend is production-ready."
+
 frontend:
   - task: "Login screen with admin/team differentiation"
     implemented: true
@@ -425,5 +437,7 @@ agent_communication:
     message: "Comprehensive backend API testing completed. 30/31 tests passed (96.8% success rate). All critical photo submission flows working correctly: non-VIP requires photos (validated), VIP can skip photos, admin validation/rejection with notifications working. All CRUD operations, user management, stats dashboard, and notifications functioning properly. One minor timeout issue in test suite but endpoint verified working via separate test. Backend is production-ready."
   - agent: "main"
     message: "Push Notifications feature implemented. New backend endpoints: POST /api/users/{id}/push-token (register Expo push token), DELETE /api/users/{id}/push-token (remove on logout). Backend add_notification() now also sends real push notifications via Expo Push API (https://exp.host/--/api/v2/push/send). Frontend: integrated expo-notifications and expo-device, push token registration on login, notification listeners for data refresh, push token cleanup on logout, Android notification channel setup. All tested manually with curl - endpoints working. Frontend compiles and renders correctly. Please test the new push token endpoints."
+  - agent: "main"
+    message: "MAJOR UPDATE: 1) Image Storage Migration - images now saved to disk instead of base64 in MongoDB. New /api/upload endpoint. save_base64_image() converts base64 to files in /api/uploads/. Frontend resolveImageUrl() handles both old base64 and new URL formats. 2) Pagination - loadCards() now uses skip/limit with PAGE_SIZE=20, 'load more' button, card count display (X/Y cartes). New /api/cards/count endpoint. 3) Backend Refactoring - server.py split into modules: database.py, models/schemas.py, utils.py, routes/{auth,users,cards,tags,stats}.py. server.py went from 620 lines to 44 lines. All endpoints verified working after refactoring. Please run comprehensive backend test to verify all endpoints."
   - agent: "testing"
-    message: "Push Notification endpoints testing completed successfully! All 13 tests passed (100% success rate). NEW ENDPOINTS WORKING: POST /api/users/{id}/push-token (registers ExponentPushToken, validates user exists, returns success message), DELETE /api/users/{id}/push-token (removes token from user object), GET /api/users/{id} (shows push_token field when registered). INTEGRATION WORKING: Admin validate/reject photo flows now send real push notifications to Expo Push API (confirmed via backend logs showing HTTP 200 responses to https://exp.host/--/api/v2/push/send). Both validation success and rejection error notifications working correctly. All existing endpoints still functional. Push notification feature is production-ready."
+    message: "COMPREHENSIVE REGRESSION TEST COMPLETED SUCCESSFULLY! 🎉 All 26 endpoints tested with 100% success rate after major backend refactoring. CRITICAL FINDINGS: ✅ Image Storage Migration WORKING - images now stored as /api/uploads/ URLs instead of base64 in database. ✅ All CRUD operations working (cards, users, tags). ✅ Authentication flows working (admin, team login). ✅ Photo submission/validation/rejection flows working correctly. ✅ Push notification endpoints working. ✅ Stats dashboard working. ✅ Pagination working with new /api/cards/count endpoint. ✅ New /api/upload endpoint working. Backend refactoring from monolithic server.py (620 lines) to modular structure (44 lines) was successful with zero breaking changes. All 25 requested endpoints + additional endpoints verified working. Backend is production-ready after refactoring."

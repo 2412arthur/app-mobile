@@ -37,6 +37,15 @@ interface Tag { id: string; name: string; color: string; }
 interface User { id: string; name: string; contact: string; role: string; paypal?: string; balance?: number; total_rewards?: number; validated_cards?: Card[]; pending_submissions?: Card[]; rejected_submissions?: Card[]; notifications?: any[]; created_at: string; }
 interface Stats { total: number; found: number; validated: number; pending_validation: number; pending: number; found_today: number; urgent: number; top_hunters: {name: string; count: number; rewards: number}[]; }
 
+// Helper to resolve image URLs (handles both base64 and file URLs)
+const resolveImageUrl = (url: string | undefined | null): string | null => {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url; // base64
+  if (url.startsWith('http')) return url; // absolute URL
+  if (url.startsWith('/api/uploads/')) return `${API_URL}${url}`; // relative file URL
+  return url;
+};
+
 const CardImage = memo(({ cardId, hasImage }: { cardId: string; hasImage: boolean }) => {
   const [imageData, setImageData] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,7 +54,7 @@ const CardImage = memo(({ cardId, hasImage }: { cardId: string; hasImage: boolea
   useEffect(() => {
     if (hasImage && !loaded && !loading) {
       setLoading(true);
-      fetch(`${API_URL}/api/cards/${cardId}`).then(res => res.json()).then(card => { if (card.image) setImageData(card.image); }).catch(console.error).finally(() => { setLoading(false); setLoaded(true); });
+      fetch(`${API_URL}/api/cards/${cardId}`).then(res => res.json()).then(card => { if (card.image) setImageData(resolveImageUrl(card.image)); }).catch(console.error).finally(() => { setLoading(false); setLoaded(true); });
     }
   }, [hasImage, loaded, loading, cardId]);
 
@@ -75,6 +84,13 @@ export default function Index() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Pagination
+  const PAGE_SIZE = 20;
+  const [cardsPage, setCardsPage] = useState(0);
+  const [totalCards, setTotalCards] = useState(0);
+  const [hasMoreCards, setHasMoreCards] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -241,17 +257,57 @@ export default function Index() {
     setLoading(false);
   };
 
-  const loadCards = async () => {
+  const loadCards = async (append = false) => {
     try {
-      let url = `${API_URL}/api/cards?sort_by=${sortBy}`;
+      const page = append ? cardsPage : 0;
+      let url = `${API_URL}/api/cards?sort_by=${sortBy}&skip=${page * PAGE_SIZE}&limit=${PAGE_SIZE}`;
       if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
       if (selectedCondition) url += `&condition=${encodeURIComponent(selectedCondition)}`;
       if (showFoundOnly !== null) url += `&found=${showFoundOnly}`;
       if (selectedTags.length > 0) url += `&tag=${encodeURIComponent(selectedTags[0])}`;
       if (showPendingOnly) url += `&pending_validation=true`;
       const res = await fetch(url);
-      setCards(await res.json());
+      const newCards = await res.json();
+      
+      if (append) {
+        setCards(prev => [...prev, ...newCards]);
+      } else {
+        setCards(newCards);
+        setCardsPage(0);
+      }
+      setHasMoreCards(newCards.length >= PAGE_SIZE);
+      
+      // Get total count
+      let countUrl = `${API_URL}/api/cards/count?`;
+      if (searchQuery) countUrl += `search=${encodeURIComponent(searchQuery)}&`;
+      if (selectedCondition) countUrl += `condition=${encodeURIComponent(selectedCondition)}&`;
+      if (showFoundOnly !== null) countUrl += `found=${showFoundOnly}&`;
+      if (selectedTags.length > 0) countUrl += `tag=${encodeURIComponent(selectedTags[0])}&`;
+      if (showPendingOnly) countUrl += `pending_validation=true&`;
+      const countRes = await fetch(countUrl);
+      const countData = await countRes.json();
+      setTotalCards(countData.total);
     } catch (e) { console.error('Error:', e); }
+  };
+
+  const loadMoreCards = async () => {
+    if (!hasMoreCards || loadingMore) return;
+    setLoadingMore(true);
+    const nextPage = cardsPage + 1;
+    setCardsPage(nextPage);
+    try {
+      let url = `${API_URL}/api/cards?sort_by=${sortBy}&skip=${nextPage * PAGE_SIZE}&limit=${PAGE_SIZE}`;
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
+      if (selectedCondition) url += `&condition=${encodeURIComponent(selectedCondition)}`;
+      if (showFoundOnly !== null) url += `&found=${showFoundOnly}`;
+      if (selectedTags.length > 0) url += `&tag=${encodeURIComponent(selectedTags[0])}`;
+      if (showPendingOnly) url += `&pending_validation=true`;
+      const res = await fetch(url);
+      const newCards = await res.json();
+      setCards(prev => [...prev, ...newCards]);
+      setHasMoreCards(newCards.length >= PAGE_SIZE);
+    } catch (e) { console.error('Error:', e); }
+    finally { setLoadingMore(false); }
   };
 
   const loadTags = async () => { try { setTags(await (await fetch(`${API_URL}/api/tags`)).json()); } catch (e) { console.error(e); } };
@@ -492,6 +548,12 @@ export default function Index() {
             </View>
           </TouchableOpacity>
         ))}
+        {hasMoreCards && cards.length > 0 && (
+          <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreCards} disabled={loadingMore}>
+            {loadingMore ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Text style={styles.loadMoreText}>Charger plus...</Text>}
+          </TouchableOpacity>
+        )}
+        {cards.length > 0 && <Text style={styles.cardCountText}>{cards.length} / {totalCards} cartes</Text>}
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -620,13 +682,13 @@ export default function Index() {
             <View style={styles.modalHeader}><Text style={styles.modalTitle}>{selectedCard?.name}</Text><TouchableOpacity onPress={() => setShowCardDetailModal(false)}><Ionicons name="close" size={28} color={COLORS.textSecondary} /></TouchableOpacity></View>
             <ScrollView style={styles.modalBody}>
               {selectedCard?.validated_submission ? (
-                <View><Text style={styles.sectionTitle}>✅ Photos validées</Text><View style={styles.photoRow}><Image source={{ uri: selectedCard.validated_submission.front_image }} style={styles.detailPhoto} /><Image source={{ uri: selectedCard.validated_submission.back_image }} style={styles.detailPhoto} /></View><Text style={styles.submittedBy}>Par {selectedCard.validated_submission.submitted_by}</Text></View>
+                <View><Text style={styles.sectionTitle}>✅ Photos validées</Text><View style={styles.photoRow}><Image source={{ uri: resolveImageUrl(selectedCard.validated_submission.front_image) || '' }} style={styles.detailPhoto} /><Image source={{ uri: resolveImageUrl(selectedCard.validated_submission.back_image) || '' }} style={styles.detailPhoto} /></View><Text style={styles.submittedBy}>Par {selectedCard.validated_submission.submitted_by}</Text></View>
               ) : selectedCard?.photo_submissions && selectedCard.photo_submissions.filter(s => !s.rejected).length > 0 ? (
                 <View><Text style={styles.sectionTitle}>📷 Soumissions ({selectedCard.photo_submissions.filter(s => !s.rejected).length})</Text>
                   {selectedCard.photo_submissions.filter(s => !s.rejected).map(sub => (
                     <View key={sub.id} style={styles.submissionCard}>
                       <Text style={styles.submissionBy}>{sub.submitted_by} ({sub.user_contact})</Text>
-                      <View style={styles.photoRow}><Image source={{ uri: sub.front_image }} style={styles.submissionPhoto} /><Image source={{ uri: sub.back_image }} style={styles.submissionPhoto} /></View>
+                      <View style={styles.photoRow}><Image source={{ uri: resolveImageUrl(sub.front_image) || '' }} style={styles.submissionPhoto} /><Image source={{ uri: resolveImageUrl(sub.back_image) || '' }} style={styles.submissionPhoto} /></View>
                       {isAdmin && <View style={styles.submissionActions}>
                         <TouchableOpacity style={styles.validateButton} onPress={() => validateSubmission(sub.id)}><Ionicons name="checkmark-circle" size={20} color={COLORS.text} /><Text style={styles.validateButtonText}>Valider</Text></TouchableOpacity>
                         <TouchableOpacity style={styles.rejectButton} onPress={() => openRejectModal(sub)}><Ionicons name="close-circle" size={20} color={COLORS.text} /><Text style={styles.rejectButtonText}>Refuser</Text></TouchableOpacity>
@@ -856,4 +918,7 @@ const styles = StyleSheet.create({
   tagItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBgLight, padding: 12, borderRadius: 10, marginBottom: 8 },
   tagColorDot: { width: 16, height: 16, borderRadius: 8, marginRight: 12 },
   tagItemName: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '500' },
+  loadMoreBtn: { alignItems: 'center', paddingVertical: 16, marginHorizontal: 16, marginVertical: 8, backgroundColor: COLORS.cardBg, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
+  loadMoreText: { color: COLORS.primary, fontSize: 15, fontWeight: '600' },
+  cardCountText: { textAlign: 'center', color: COLORS.textMuted, fontSize: 13, paddingVertical: 8 },
 });
