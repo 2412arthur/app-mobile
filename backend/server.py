@@ -113,6 +113,13 @@ def get_object_id(id_str: str):
         raise HTTPException(status_code=404, detail="Invalid ID format")
 
 # Auth endpoints
+@api_router.post("/auth/admin")
+async def admin_login(data: dict):
+    """Admin login with password only"""
+    password = data.get('password', '')
+    is_admin = secrets.compare_digest(password, ADMIN_PASSWORD)
+    return {"is_admin": is_admin}
+
 @api_router.post("/auth/login", response_model=AuthResponse)
 async def login_or_register(auth: AuthRequest):
     """Login or register user"""
