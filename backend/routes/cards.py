@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from bson import ObjectId
 from typing import Optional
 from datetime import datetime, timedelta
+import os
 
 from database import db
 from models.schemas import (
@@ -9,7 +10,7 @@ from models.schemas import (
     ValidatePhotoRequest, RejectSubmissionRequest, MarkFoundRequest,
     ImageUploadRequest
 )
-from utils import doc_to_dict, get_object_id, save_base64_image, add_notification
+from utils import doc_to_dict, get_object_id, save_base64_image, add_notification, delete_image_file, UPLOADS_DIR
 
 router = APIRouter()
 
@@ -134,9 +135,26 @@ async def update_card(card_id: str, card_update: CardUpdate):
 @router.delete("/cards/{card_id}")
 async def delete_card(card_id: str):
     oid = get_object_id(card_id)
-    result = await db.cards.delete_one({'_id': oid})
-    if result.deleted_count == 0:
+    # Fetch card to get image URLs before deleting
+    card = await db.cards.find_one({'_id': oid})
+    if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    
+    # Delete main card image
+    if card.get('image'):
+        delete_image_file(card['image'])
+    
+    # Delete all photo submission images
+    for sub in card.get('photo_submissions', []):
+        delete_image_file(sub.get('front_image', ''))
+        delete_image_file(sub.get('back_image', ''))
+    
+    # Delete validated submission images
+    if card.get('validated_submission'):
+        delete_image_file(card['validated_submission'].get('front_image', ''))
+        delete_image_file(card['validated_submission'].get('back_image', ''))
+    
+    await db.cards.delete_one({'_id': oid})
     return {"message": "Card deleted"}
 
 

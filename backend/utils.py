@@ -14,6 +14,19 @@ UPLOADS_DIR = ROOT_DIR / 'uploads'
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 
+def delete_image_file(url: str):
+    """Delete an image file from disk given its /api/uploads/ URL"""
+    if not url or not url.startswith('/api/uploads/'):
+        return
+    try:
+        filename = url.split('/api/uploads/')[-1]
+        filepath = UPLOADS_DIR / filename
+        if filepath.exists():
+            filepath.unlink()
+    except Exception as e:
+        logging.error(f"Image delete error: {e}")
+
+
 def doc_to_dict(doc: dict) -> dict:
     if '_id' in doc:
         doc['id'] = str(doc['_id'])
